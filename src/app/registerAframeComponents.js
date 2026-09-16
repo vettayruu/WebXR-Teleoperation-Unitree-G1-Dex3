@@ -806,6 +806,14 @@ export default function registerAframeComponents(options) {
     }
   });
 
+  // ----- Hand Tracking -----
+  // WebXR Hand 25 Joints checke https://developers.meta.com/horizon/documentation/web/webxr-hands/
+  // 0     ["wrist"],
+  // 1-4   ["thumb-metacarpal", "thumb-phalanx-proximal", "thumb-phalanx-distal", "thumb-tip"],
+  // 5-9   ["index-finger-metacarpal", "index-finger-phalanx-proximal", "index-finger-phalanx-intermediate", "index-finger-phalanx-distal", "index-finger-tip"],
+  // 10-14 ["middle-finger-metacarpal", "middle-finger-phalanx-proximal", "middle-finger-phalanx-intermediate", "middle-finger-phalanx-distal", "middle-finger-tip"],
+  // 15-19 ["ring-finger-metacarpal", "ring-finger-phalanx-proximal", "ring-finger-phalanx-intermediate", "ring-finger-phalanx-distal", "ring-finger-tip"],
+  // 20-24 ["pinky-finger-metacarpal", "pinky-finger-phalanx-proximal", "pinky-finger-phalanx-intermediate", "pinky-finger-phalanx-distal", "pinky-finger-tip"]
   AFRAME.registerComponent('vr-hand-as-controller', {
     schema: {
       hand: { type: 'string', default: 'right' },
