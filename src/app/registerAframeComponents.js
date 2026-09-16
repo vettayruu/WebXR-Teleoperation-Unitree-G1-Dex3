@@ -806,7 +806,6 @@ export default function registerAframeComponents(options) {
     }
   });
 
-  // Hand Tracking with Laser Pointer. Not stable yet, so commented out for now.
   AFRAME.registerComponent('vr-hand-as-controller', {
     schema: {
       hand: { type: 'string', default: 'right' },
