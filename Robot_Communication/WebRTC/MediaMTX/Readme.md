@@ -163,6 +163,8 @@ ffmpeg -f dshow -video_size 2800x1400 -framerate 30 -i video="VR.Cam 02" `  -vf 
 | `-tune ll` | Low-latency encoding |
 | `-rtsp_transport tcp` | Use TCP for RTSP streaming |
 
+Check more details at [here](./nvenc_options.txt)
+
 ---
 
 ### 5.2 Jetson — GStreamer
