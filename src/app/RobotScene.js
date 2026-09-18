@@ -916,7 +916,7 @@ export default function RobotScene(props) {
             texWidth: 1400;
             texHeight: 1400;
           "
-          position="-0.20 10.0 10.0"
+          position="-0.25 10.0 10.0"
         ></a-entity>
         )}
 
@@ -932,7 +932,7 @@ export default function RobotScene(props) {
             texWidth: 1400;
             texHeight: 1400;
           "
-          position="0.20 10.0 10.0"
+          position="0.25 10.0 10.0"
         ></a-entity>
         )}
 
