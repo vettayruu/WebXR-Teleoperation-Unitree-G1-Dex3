@@ -544,7 +544,7 @@ export default function RobotScene(props) {
               <a-entity
                   position="0.010 -0.05 0"
                   class="raycastable"
-                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  // onClick={() => setDropdownOpen(!dropdownOpen)}
               >
                   <a-plane width="1.20" height="0.08" color="#444a54" opacity="0.9"></a-plane>
                   <a-text value="Task"    position="-0.54 0 0.01" width="1" font={font_path} color="#00c8ff"></a-text>
@@ -554,7 +554,7 @@ export default function RobotScene(props) {
 
               </a-entity>
 
-              {dropdownOpen && Array.isArray(apiData?.task) && (() => {
+              {Array.isArray(apiData?.task) && (() => {
                   const allTasks = apiData.task;
                   const pageSize = 5;
                   const totalPages = Math.ceil(allTasks.length / pageSize);
@@ -893,7 +893,7 @@ export default function RobotScene(props) {
 
         <a-entity vr-controller-hmd></a-entity>
 
-        <a-entity fps-counter></a-entity>
+        {/* <a-entity fps-counter></a-entity> */}
         
         {/* Show Controller Laser Pointer for Right Hand Only (for menu interaction) */}
         {showMenu && (
@@ -903,44 +903,38 @@ export default function RobotScene(props) {
             raycaster="objects: .raycastable"
           ></a-entity>
         )}
-        
-        {showVideo && (
-        <a-entity
-          stereo-split="
-            eye: left; 
-            videoId: stereoVideo;
-            geometryType: sphere;
-            radius: 100;
-            segmentsWidth: 64;
-            segmentsHeight: 64;
-            phiStart: 9.3;
-            phiLength: 160;
-            thetaStart: 30;
-            thetaLength: 130;
-          "
-          position="-0.30 10.0 10.0"
-          scale="-1 1 1"
-          rotation="0 180 0"
-        ></a-entity>)}
 
         {showVideo && (
         <a-entity
           stereo-split="
-            eye: right; 
+            eye: left;
             videoId: stereoVideo;
-            geometryType: sphere;
+            lensModel: fisheye;
             radius: 100;
-            segmentsWidth: 64;
-            segmentsHeight: 64;
-            phiStart: 10.7; 
-            phiLength: 160;
-            thetaStart: 30;
-            thetaLength: 130;
+            segmentsWidth: 80;
+            segmentsHeight: 80;
+            texWidth: 1400;
+            texHeight: 1400;
           "
-          position="0.30 10.0 10.0"
-          scale="-1 1 1"
-          rotation="0 180 0"
-        ></a-entity>)}
+          position="-0.20 10.0 10.0"
+        ></a-entity>
+        )}
+
+        {showVideo && (
+        <a-entity
+          stereo-split="
+            eye: right;
+            videoId: stereoVideo;
+            lensModel: fisheye;
+            radius: 100;
+            segmentsWidth: 80;
+            segmentsHeight: 80;
+            texWidth: 1400;
+            texHeight: 1400;
+          "
+          position="0.20 10.0 10.0"
+        ></a-entity>
+        )}
 
       </a-scene>
 
