@@ -174,10 +174,14 @@ export default function registerAframeComponents(options) {
       
       if (!frame || !xr.enabled) return;
 
+      // 获取参考空间
       const refSpace = xr.getReferenceSpace();
+      // 'viewer' 是 WebXR 标准中代表头显的专用名称
       const viewerPose = frame.getViewerPose(refSpace);
 
       if (viewerPose) {
+        // viewerPose 包含多个 view（通常左右眼各一个）
+        // 但它的 transform 属性代表了头部的中心位置
         const pose = viewerPose.transform;
 
         this.hmdProxy.position.set(pose.position.x, pose.position.y, pose.position.z);
@@ -457,22 +461,227 @@ export default function registerAframeComponents(options) {
     }
   });
 
+  // ========================== Fisheye Screen Geometry =========================
+  // ---------- Newton's iteration method: Given the post-distortion radius r, solve for the incident angle theta. ----------
+  function invertFisheyeTheta(r, k1, k2, k3, k4, iterations = 10) {
+    let theta = r; // 初始猜测值:畸变较小时 theta ≈ r
+    for (let i = 0; i < iterations; i++) {
+      const t2 = theta * theta;
+      const t4 = t2 * t2;
+      const t6 = t4 * t2;
+      const t8 = t4 * t4;
+
+      const f = theta * (1 + k1*t2 + k2*t4 + k3*t6 + k4*t8) - r;
+      const fPrime = 1 + 3*k1*t2 + 5*k2*t4 + 7*k3*t6 + 9*k4*t8;
+
+      if (Math.abs(fPrime) < 1e-9) break;
+      theta -= f / fPrime;
+    }
+    return theta;
+  }
+
+  // ---------- Screen geometry based on distortion calibration parameters. ----------
+
+  // Screen Geometry for Fisheye Camera (e.g., VRCam.02)
+  AFRAME.registerGeometry('fisheye-screen', {
+    schema: {
+      fx: { type: 'number', default: 597.46983283 },
+      fy: { type: 'number', default: 596.93842125 },
+      cx: { type: 'number', default: 691.10281286 },
+      cy: { type: 'number', default: 704.46497326 },
+      k1: { type: 'number', default: -0.05007161 },
+      k2: { type: 'number', default:  0.00713101 },
+      k3: { type: 'number', default: -0.01297023 },
+      k4: { type: 'number', default:  0.00511741 },
+
+      texWidth: { type: 'number', default: 1400 },  // single-eye texture width
+      texHeight: { type: 'number', default: 1400 }, // single-eye texture height
+      eyeOffsetX: { type: 'number', default: 0 },   // left eye 0, right eye 0.5 (UV offset in the entire SBS texture)
+
+      radius: { type: 'number', default: 100 },      // screen distance from the observer
+      segmentsWidth: { type: 'number', default: 64 },
+      segmentsHeight: { type: 'number', default: 64 },
+      maxTheta: { type: 'number', default: 100 },     // Upper limit for incident angle truncation (degrees), to prevent numerical explosion during edge extrapolation.
+    },
+
+    init: function (data) {
+      const geometry = new THREE.BufferGeometry();
+      const positions = [];
+      const uvs = [];
+      const indices = [];
+
+      const segW = data.segmentsWidth;
+      const segH = data.segmentsHeight;
+      const maxThetaRad = THREE.MathUtils.degToRad(data.maxTheta);
+
+      for (let iy = 0; iy <= segH; iy++) {
+        const py = (iy / segH) * data.texHeight; 
+
+        for (let ix = 0; ix <= segW; ix++) {
+          const px = (ix / segW) * data.texWidth; 
+
+          // Pixel coordinates -> Normalized camera coordinates
+          const x = (px - data.cx) / data.fx;
+          const y = (py - data.cy) / data.fy;
+          const r = Math.sqrt(x * x + y * y);
+          const phi = Math.atan2(y, x);
+
+          // Newton's iteration method: Invert the incident angle theta, and truncate it to avoid divergence in the image edges (pure black regions).
+          let theta = invertFisheyeTheta(r, data.k1, data.k2, data.k3, data.k4);
+          theta = Math.min(theta, maxThetaRad);
+
+          // Based on the incident angle and azimuth, place the pixel on the sphere in the corresponding direction (with the observer facing the -Z direction).
+          const posX = data.radius * Math.sin(theta) * Math.cos(phi);
+          const posY = data.radius * Math.sin(theta) * Math.sin(phi);
+          const posZ = -data.radius * Math.cos(theta);
+
+          positions.push(posX, posY, posZ);
+
+          // Linear UV: Directly corresponds to the pixel's position within the texture (offset by `eyeOffsetX` for the left and right eyes).
+          const u = data.eyeOffsetX + (px / data.texWidth) * 0.5;
+          const v = py / data.texHeight; // If the image is upside down, change to 1.0 - py/data.texHeight
+          uvs.push(u, v);
+        }
+      }
+
+      for (let iy = 0; iy < segH; iy++) {
+        for (let ix = 0; ix < segW; ix++) {
+          const a = iy * (segW + 1) + ix;
+          const b = a + 1;
+          const c = a + (segW + 1);
+          const d = c + 1;
+          indices.push(a, c, b, b, c, d);
+        }
+      }
+
+      geometry.setIndex(indices);
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      geometry.computeVertexNormals();
+
+      this.geometry = geometry;
+    },
+  });
+
+  // Screen for Pinhole Camera, (e.g., Zed-mini)
+  AFRAME.registerGeometry('pinhole-screen', {
+    schema: {
+      fx: { type: 'number', default: 788.41415049 },
+      fy: { type: 'number', default: 787.3765135 },
+      cx: { type: 'number', default: 655.01692926 },
+      cy: { type: 'number', default: 357.82862631 },
+      k1: { type: 'number', default: -0.3506601 },
+      k2: { type: 'number', default: 0.18558038 },
+      k3: { type: 'number', default: -0.00065609 },
+      p1: { type: 'number', default: 0.00100313 },
+      p2: { type: 'number', default: -0.05786136 },
+
+      texWidth: { type: 'number', default: 1280 },  
+      texHeight: { type: 'number', default: 720 },  
+      eyeOffsetX: { type: 'number', default: 0 },   
+
+      radius: { type: 'number', default: 100 },     
+      segmentsWidth: { type: 'number', default: 64 },
+      segmentsHeight: { type: 'number', default: 64 },
+      fovMargin: { type: 'number', default: 1.0 },  
+    },
+
+    init: function (data) {
+      const geometry = new THREE.BufferGeometry();
+      const positions = [];
+      const uvs = [];
+      const indices = [];
+
+      const segW = data.segmentsWidth;
+      const segH = data.segmentsHeight;
+
+      const xuMin = ((0 - data.cx) / data.fx) * data.fovMargin;
+      const xuMax = ((data.texWidth - data.cx) / data.fx) * data.fovMargin;
+      const yuMin = ((0 - data.cy) / data.fy) * data.fovMargin;
+      const yuMax = ((data.texHeight - data.cy) / data.fy) * data.fovMargin;
+
+      for (let iy = 0; iy <= segH; iy++) {
+        const yu = yuMin + (iy / segH) * (yuMax - yuMin);
+
+        for (let ix = 0; ix <= segW; ix++) {
+          const xu = xuMin + (ix / segW) * (xuMax - xuMin);
+
+          const r2 = xu * xu + yu * yu;
+          const r4 = r2 * r2;
+          const r6 = r4 * r2;
+          const radial = 1 + data.k1 * r2 + data.k2 * r4 + data.k3 * r6;
+
+          const xd = xu * radial + 2 * data.p1 * xu * yu + data.p2 * (r2 + 2 * xu * xu);
+          const yd = yu * radial + data.p1 * (r2 + 2 * yu * yu) + 2 * data.p2 * xu * yu;
+
+          const px = xd * data.fx + data.cx;
+          const py = yd * data.fy + data.cy;
+
+          const posX = xu * data.radius;
+          const posY = -yu * data.radius; 
+          const posZ = -data.radius;
+
+          positions.push(posX, posY, posZ);
+
+          const u = data.eyeOffsetX + THREE.MathUtils.clamp(px / data.texWidth, 0, 1) * 0.5;
+          const v = THREE.MathUtils.clamp(py / data.texHeight, 0, 1);
+          uvs.push(u, v);
+        }
+      }
+
+      for (let iy = 0; iy < segH; iy++) {
+        for (let ix = 0; ix < segW; ix++) {
+          const a = iy * (segW + 1) + ix;
+          const b = a + 1;
+          const c = a + (segW + 1);
+          const d = c + 1;
+          indices.push(a, c, b, b, c, d);
+        }
+      }
+
+      geometry.setIndex(indices);
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      geometry.computeVertexNormals();
+
+      this.geometry = geometry;
+    },
+  });
+
   AFRAME.registerComponent('stereo-split', {
     schema: {
       eye: { type: 'string', default: 'left' },
       videoId: { type: 'string', default: '' },
-      geometryType: { type: 'string', default: 'sphere' }, 
+
+      lensModel: { type: 'string', default: 'fisheye' }, // 'fisheye' | 'pinhole'
+
       radius: { type: 'number', default: 100 },
-      
       segmentsWidth: { type: 'number', default: 64 },
       segmentsHeight: { type: 'number', default: 64 },
-      phiStart: { type: 'number', default: 0 },
-      phiLength: { type: 'number', default: 360 },
-      thetaStart: { type: 'number', default: 0 },
-      thetaLength: { type: 'number', default: 180 },
 
-      width: { type: 'number', default: 1 },
-      height: { type: 'number', default: 1 },
+      // 共用内参
+      fx: { type: 'number', default: 597.46983283 },
+      fy: { type: 'number', default: 596.93842125 },
+      cx: { type: 'number', default: 691.10281286 },
+      cy: { type: 'number', default: 704.46497326 },
+
+      // fisheye parameters (radial distortion model)
+      k1: { type: 'number', default: -0.05007161 },
+      k2: { type: 'number', default:  0.00713101 },
+      k3: { type: 'number', default: -0.01297023 },
+      k4: { type: 'number', default:  0.00511741 },
+      maxTheta: { type: 'number', default: 100 },
+
+      // pinhole parameters (radial + tangential distortion model)
+      pk1: { type: 'number', default: -0.3506601 },
+      pk2: { type: 'number', default: 0.18558038 },
+      pk3: { type: 'number', default: -0.00065609 },
+      p1: { type: 'number', default: 0.00100313 },
+      p2: { type: 'number', default: -0.05786136 },
+      fovMargin: { type: 'number', default: 1.0 },
+
+      texWidth: { type: 'number', default: 1920 },
+      texHeight: { type: 'number', default: 1920 },
     },
 
     init: function () {
@@ -489,59 +698,67 @@ export default function registerAframeComponents(options) {
 
       const texture = new THREE.VideoTexture(this.videoEl);
       texture.colorSpace = THREE.SRGBColorSpace;
-
-      if (this.data.eye === 'left') {
-        texture.repeat.set(0.5, 1);
-        texture.offset.set(0, 0);
-      } else if (this.data.eye === 'right') {
-        texture.repeat.set(0.5, 1);
-        texture.offset.set(0.5, 0);
-      }
+      this.texture = texture;
 
       this.el.setAttribute('material', {
         shader: 'flat',
         src: texture,
-        side: 'back' 
+        side: 'back',
       });
 
       this.updateGeometry();
       this.updateLayer();
     },
 
-    update: function (oldData) {
+    update: function () {
       this.updateGeometry();
       this.updateLayer();
     },
 
     updateGeometry: function () {
       const data = this.data;
-      let geometryParams;
+      const eyeOffsetX = this.data.eye === 'right' ? 0.5 : 0.0;
 
-      switch (data.geometryType) {
-        case 'sphere':
-          geometryParams = {
-            primitive: 'sphere',
-            radius: data.radius,
-            segmentsWidth: data.segmentsWidth,
-            segmentsHeight: data.segmentsHeight,
-            phiStart: data.phiStart,
-            phiLength: data.phiLength,
-            thetaStart: data.thetaStart,
-            thetaLength: data.thetaLength,
-          };
-          break;
-        
-        case 'plane':
-        default:
-          geometryParams = {
-            primitive: 'plane',
-            width: data.width,
-            height: data.height,
-          };
-          break;
+      if (data.lensModel === 'pinhole') {
+        this.el.setAttribute('geometry', {
+          primitive: 'pinhole-screen',
+          radius: data.radius,
+          segmentsWidth: data.segmentsWidth,
+          segmentsHeight: data.segmentsHeight,
+          fx: data.fx,
+          fy: data.fy,
+          cx: data.cx,
+          cy: data.cy,
+          k1: data.pk1,
+          k2: data.pk2,
+          k3: data.pk3,
+          p1: data.p1,
+          p2: data.p2,
+          texWidth: data.texWidth,
+          texHeight: data.texHeight,
+          eyeOffsetX: eyeOffsetX,
+          fovMargin: data.fovMargin,
+        });
+      } else {
+        this.el.setAttribute('geometry', {
+          primitive: 'fisheye-screen',
+          radius: data.radius,
+          segmentsWidth: data.segmentsWidth,
+          segmentsHeight: data.segmentsHeight,
+          fx: data.fx,
+          fy: data.fy,
+          cx: data.cx,
+          cy: data.cy,
+          k1: data.k1,
+          k2: data.k2,
+          k3: data.k3,
+          k4: data.k4,
+          texWidth: data.texWidth,
+          texHeight: data.texHeight,
+          eyeOffsetX: eyeOffsetX,
+          maxTheta: data.maxTheta,
+        });
       }
-      
-      this.el.setAttribute('geometry', geometryParams);
     },
 
     updateLayer: function () {
@@ -558,61 +775,8 @@ export default function registerAframeComponents(options) {
         default:
           mesh.layers.set(0);
       }
-    }
+    },
   });
-
-  // // For ZED Mini
-  // AFRAME.registerComponent('stereo-curvedvideo', {
-  //   schema: {
-  //     eye: { type: 'string', default: 'left' }, // 'left', 'right', or 'both'
-  //     videoId: { type: 'string', default: '' }  // ID of the <video> element
-  //   },
-  //   init: function () {
-  //     const videoEl = document.getElementById(this.data.videoId);
-  //     if (!videoEl || videoEl.tagName !== 'VIDEO') {
-  //       console.warn('Video element not found:', this.data.videoId);
-  //       return;
-  //     }
-
-  //     this.videoEl = videoEl;
-  //     this.videoEl.setAttribute('crossorigin', 'anonymous');
-  //     this.videoEl.setAttribute('playsinline', 'true');
-  //     this.videoEl.play();
-
-  //     // Set hemisphere geometry
-  //     this.el.setAttribute('geometry', {
-  //       primitive: 'sphere',
-  //       radius: 50, 
-  //       segmentsWidth: 64,
-  //       segmentsHeight: 32,
-  //       thetaStart: 45, 
-  //       thetaLength: 75,
-  //       phiStart: 185,
-  //       phiLength: 145
-  //     });
-
-  //     this.el.setAttribute('material', {
-  //       shader: 'flat',
-  //       src: new THREE.VideoTexture(this.videoEl),
-  //       side: 'double' 
-  //     });
-  //   },
-  //   update: function () {
-  //     const mesh = this.el.getObject3D('mesh');
-  //     if (!mesh) return;
-
-  //     switch (this.data.eye) {
-  //       case 'left':
-  //         mesh.layers.set(1);
-  //         break;
-  //       case 'right':
-  //         mesh.layers.set(2);
-  //         break;
-  //       default:
-  //         mesh.layers.set(0); // both
-  //     }
-  //   }
-  // });
 
   AFRAME.registerComponent('highlight', {
     init: function () {
@@ -806,14 +970,6 @@ export default function registerAframeComponents(options) {
     }
   });
 
-  // ----- Hand Tracking -----
-  // WebXR Hand 25 Joints checke https://developers.meta.com/horizon/documentation/web/webxr-hands/
-  // 0     ["wrist"],
-  // 1-4   ["thumb-metacarpal", "thumb-phalanx-proximal", "thumb-phalanx-distal", "thumb-tip"],
-  // 5-9   ["index-finger-metacarpal", "index-finger-phalanx-proximal", "index-finger-phalanx-intermediate", "index-finger-phalanx-distal", "index-finger-tip"],
-  // 10-14 ["middle-finger-metacarpal", "middle-finger-phalanx-proximal", "middle-finger-phalanx-intermediate", "middle-finger-phalanx-distal", "middle-finger-tip"],
-  // 15-19 ["ring-finger-metacarpal", "ring-finger-phalanx-proximal", "ring-finger-phalanx-intermediate", "ring-finger-phalanx-distal", "ring-finger-tip"],
-  // 20-24 ["pinky-finger-metacarpal", "pinky-finger-phalanx-proximal", "pinky-finger-phalanx-intermediate", "pinky-finger-phalanx-distal", "pinky-finger-tip"]
   AFRAME.registerComponent('vr-hand-as-controller', {
     schema: {
       hand: { type: 'string', default: 'right' },
