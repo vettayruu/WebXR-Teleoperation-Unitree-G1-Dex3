@@ -2,6 +2,7 @@
   "name": "unitree-g1-control-liu",
   "version": "0.1.1",
   "private": true,
+  "hostIP": "192.168.123.235",
   "customInfo": {
     "type": "Unitree-G1-Dex3",
     "developer": "uclab-liust",
