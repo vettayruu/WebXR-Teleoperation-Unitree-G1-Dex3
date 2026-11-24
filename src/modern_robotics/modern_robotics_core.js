@@ -1728,13 +1728,14 @@ function IKinSpaceNull(Slist, M, T, thetalist0, qmin, qmax, eomg, ev) {
     let i = 0;
     const maxiterations = 50;
     
-    const alpha = 0.10;
+    const alpha = 1.0;
     let lambda_squared = 1e-4; 
 
     let thetalist = thetalist0.slice();
     const n = thetalist.length;
     const IdentityN = numeric.identity(n);
     const qmid = thetalist.map((_, idx) => (qmax[idx] + qmin[idx]) / 2);
+    const K = thetalist.map((_, idx) => 1 / ((qmax[idx] - qmin[idx]) ** 2));
 
     while (i < maxiterations) {
         // 1. Compute current end-effector pose and error twist
@@ -1757,7 +1758,7 @@ function IKinSpaceNull(Slist, M, T, thetalist0, qmin, qmax, eomg, ev) {
         const A = numeric.add(JTJ, numeric.mul(lambda_squared, IdentityN));
         const b_1 = numeric.dot(JsT, Vs);
         // 4.2 Null Space Task
-        const grad = thetalist.map((t, idx) => (qmid[idx] - t)); 
+        const grad = thetalist.map((t, idx) => K[idx] * (qmid[idx] - t)); 
         const b_2 = numeric.mul(alpha * lambda_squared, grad);
         // 4.3 Solve and update dtheta
         const dtheta = numeric.solve(A, numeric.add(b_1, b_2));
