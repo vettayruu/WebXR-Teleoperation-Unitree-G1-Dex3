@@ -8,6 +8,8 @@ export const codeType = package_info.customInfo.type;
 export const version = package_info.version; // version number
 console.log("Robot Type:", codeType);
 
+export const hostIP = package_info.hostIP
+
 // global private variable
 export var mqttclient = null;
 export { userUUID };
@@ -16,11 +18,12 @@ export { userUUID };
 // MQTT Broker URL
 // const MQTT_BROKER_URL = "wss://sora2.uclab.jp/mqws"; // For Nagoya-U UCLab Development
 // const MQTT_BROKER_URL = "wss://santolina/mqtt"; // For Local Development, change to your broker address
-const MQTT_BROKER_URL = "wss://192.168.207.161/mqtt"; // For Internet Development, change to your broker address
-// const MQTT_BROKER_URL = "wss://liust.local/mqtt";
+// const MQTT_BROKER_URL = "wss://192.168.207.161/mqtt"; // For Internet Development, change to your broker address
+const MQTT_BROKER_URL = "wss://" + hostIP + "/mqtt"
+const WS_URL = "https://" + hostIP + "/ws"
 
 // WebSocket URL
-const WS_URL = "https://192.168.207.161/ws";
+// const WS_URL = "https://192.168.207.161/ws";
 // const WS_URL = 'https://liust.local/ws';
 // const currentIP = typeof window !== 'undefined' ? window.location.hostname : '';
 // console.log("Current IP:", currentIP);

@@ -1,6 +1,9 @@
 import React from 'react';
+import { hostIP } from './MetaworkMQTT';
+
 const channelId = 'g1-vr180'; 
-const whepUrl = `https://192.168.207.161/vrstream/${channelId}/whep`;
+// const whepUrl = `https://192.168.207.161/vrstream/${channelId}/whep`;
+const whepUrl = `https://${hostIP}/vrstream/${channelId}/whep`;
 
 export const WebRTC_Config = {
   URL: whepUrl,
